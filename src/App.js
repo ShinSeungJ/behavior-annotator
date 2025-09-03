@@ -431,15 +431,24 @@ function App() {
       } else if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
         e.preventDefault();
         setArrowPressed(e.code);
-      } else if (e.code === "Equal" || e.code === "NumpadAdd") { // + key for zoom in
+          } else if (e.code === "Equal" || e.code === "NumpadAdd") { // + key for zoom in
+      // Don't prevent default if it's a browser zoom command (Cmd/Ctrl + +)
+      if (!e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         zoomIn();
-      } else if (e.code === "Minus" || e.code === "NumpadSubtract") { // - key for zoom out
+      }
+    } else if (e.code === "Minus" || e.code === "NumpadSubtract") { // - key for zoom out
+      // Don't prevent default if it's a browser zoom command (Cmd/Ctrl + -)
+      if (!e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         zoomOut();
-      } else if (e.code === "Digit0" || e.code === "Numpad0") { // 0 key for reset zoom
+      }
+    } else if (e.code === "Digit0" || e.code === "Numpad0") { // 0 key for reset zoom
+      // Don't prevent default if it's a browser zoom command (Cmd/Ctrl + 0)
+      if (!e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         resetZoom();
+      }
       }
     };
 
