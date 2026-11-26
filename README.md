@@ -1,70 +1,79 @@
-# Getting Started with Create React App
+# Behavior Annotator
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A web-based tool for labeling animal behaviors in videos, frame by frame, as start–end intervals.
 
-## Available Scripts
+Live: https://shinseungj.github.io/behavior-annotator/
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+### 🎬 Video Playback
+- Load a video and step through it frame by frame
+- Adjustable frame rate (FPS, default 30) and frame step interval (ms) for held arrow keys
+- Zoom with buttons, keys or the mouse wheel, and pan by dragging
+- Click anywhere on the timeline slider to jump to a frame
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### 🏷️ Behavior Intervals
+- Mark a start frame (S) and end frame (E), then press a number key to save the interval with that behavior
+- Edit the behavior of any saved interval, or delete it
+- Click an interval's frame range to jump to it in the video
+- Paginated interval list, sorted by start frame (latest first)
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### 📊 Behavior Timeline
+- Color-coded bar under the video showing every labeled interval
+- Legend for each behavior; click a segment to jump to its start
 
-### `npm test`
+### ⚙️ Behavior Settings
+- Default behaviors: supported rearing, unsupported rearing, grooming, freezing, jumping
+- Add, rename, delete and reorder behaviors (arrows or by typing a new position)
+- Renaming a behavior updates all intervals that use it
+- Number keys follow the order in the list (up to 9 behaviors)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### 💾 Export
+- **Save CSV** downloads a ZIP with `<video name>_intervals.csv`
+- Columns: `type, start_time, end_time, start_frame, end_frame, behavior`
 
-### `npm run build`
+### 🌗 Light and Dark Mode
+- Toggle with the icon in the top-right corner
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Getting Started
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. **Select Video**: choose a video file
+2. **Set FPS**: enter the video's frame rate so frame numbers and times are correct
+3. **Label**: move to the start of a behavior and press **S**, move to the end and press **E**, then press the behavior's number key
+4. **Export**: click **Save CSV**
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Keyboard Shortcuts
 
-### `npm run eject`
+- **→ / ←**: Next / previous frame (hold to keep moving; after S, releasing the key sets the end frame)
+- **S**: Mark start frame
+- **E**: Update end frame
+- **1–9**: Save the current interval with that behavior
+- **+ / -**: Zoom in / out
+- **0**: Reset zoom
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+The **Shortcuts** button next to Behavior Intervals shows this list in the app.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Development
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+Built with React (Create React App) and Material UI.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Key Dependencies
+- **@mui/material**: UI components
+- **papaparse**: CSV generation
+- **jszip** and **file-saver**: ZIP export
 
-## Learn More
+### Running Locally
+```bash
+npm install
+npm start
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Deploying
+```bash
+npm run deploy
+```
+Builds the app and publishes the `build/` folder to the `gh-pages` branch, which GitHub Pages serves.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## Browser Requirements
+- A modern browser that can play the video's format (MP4 H.264 works everywhere)
+- On Safari, browser zoom shortcuts (Cmd +/-) still work alongside the app's zoom keys
