@@ -3,7 +3,7 @@ import {
   Button, Select, MenuItem, Box, Typography, Grid,
   Table, TableHead, TableRow, TableCell, TableBody,
   TextField, FormControl, InputLabel, Slider, IconButton, Modal, Paper, Divider,
-  Collapse, Accordion, AccordionSummary, AccordionDetails,
+  Collapse, Accordion, AccordionSummary, AccordionDetails, CircularProgress, Alert,
   Switch, FormControlLabel
 } from "@mui/material";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
@@ -18,6 +18,26 @@ import { saveAs } from "file-saver";
 const defaultBehaviors = ["supported rearing", "unsupported rearing", "grooming", "freezing", "jumping"];
 // Dynamic rows per page based on behavior settings expansion
 const getRowsPerPage = (behaviorSettingsExpanded) => behaviorSettingsExpanded ? 24 : 14;
+
+// Behavior detection mapping (API class IDs)
+const BEHAVIOR_DETECTION_LABELS = {
+  0: "supported rearing",    // UI: Key 1
+  1: "unsupported rearing",  // UI: Key 2
+  2: "grooming",             // UI: Key 3
+  3: "freezing",             // UI: Key 4
+  4: "jumping",              // UI: Key 5
+  5: "other" // Note: "other" (class 5) is filtered out and not used for annotation
+};
+
+// Colors for behavior visualization (matching your demo)
+const BEHAVIOR_COLORS = {
+  "supported rearing": "#FF6B6B",
+  "unsupported rearing": "#4ECDC4", 
+  "grooming": "#45B7D1",
+  "freezing": "#96CEB4",
+  "jumping": "#FFEAA7",
+  "other": "#DDA0DD"
+};
 
 function App() {
   const [behaviors, setBehaviors] = useState(defaultBehaviors);
@@ -51,6 +71,13 @@ function App() {
   const [behaviorSettingsExpanded, setBehaviorSettingsExpanded] = useState(false);
   const [editingNumberIndex, setEditingNumberIndex] = useState(-1);
   const [editingNumber, setEditingNumber] = useState("");
+
+  // New state variables for behavior detection
+  const [predictedBehaviors, setPredictedBehaviors] = useState([]);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectionStatus, setDetectionStatus] = useState("");
+  // Removed showPredictedTimeline - no longer needed
+  // Removed showOtherBehaviors - "other" behaviors are always filtered out
 
   // Generate consistent colors for behaviors
   const getBehaviorColor = (behaviorIndex) => {
@@ -680,6 +707,205 @@ function App() {
     });
   }
 
+  // Behavior detection function - calls HuggingFace Space API
+  const detectBehaviors = async () => {
+    if (!videoUrl) {
+      alert("Please upload a video first.");
+      return;
+    }
+
+    setIsDetecting(true);
+    setDetectionStatus("Connecting to AI model...");
+    
+        try {
+      setDetectionStatus("Connecting to HuggingFace Space...");
+      console.log('Connecting to ShinSeungJ/detect_behaviors Space...');
+      
+      // Connect to the updated Gradio 5.x Space
+      const { Client } = await import('@gradio/client');
+      
+      console.log('Connecting to updated Gradio 5.x Space...');
+      const client = await Client.connect('ShinSeungJ/detect_behaviors');
+      console.log('Successfully connected to Space');
+      
+      setDetectionStatus("Detecting Behaviors...");
+      
+      // Call the API using the updated Gradio 5.x format with named parameters
+      console.log('Calling predict function with updated API format...');
+      const result = await client.predict("/predict", { 
+        trigger: "Hello!!" 
+      });
+      console.log('API Response received:', result);
+      
+      setDetectionStatus("Processing results...");
+      
+            // Process the result - Gradio 5.x returns data in result.data
+      let apiResult;
+      if (result && result.data) {
+        console.log('Raw API result data:', result.data);
+        
+        // Handle array response format - extract first element
+        if (Array.isArray(result.data) && result.data.length > 0) {
+          apiResult = result.data[0];
+        } else {
+          apiResult = result.data;
+        }
+        
+        console.log('Processed API result:', apiResult);
+      } else {
+        throw new Error('Invalid response format from API - missing result.data');
+      }
+      
+      // Check if we have the expected behavior prediction format
+      if (apiResult && apiResult.success && apiResult.predictions) {
+          // Count "other" predictions for logging (but keep them in data)
+          const totalPredictions = apiResult.predictions.length;
+          const otherPredictions = apiResult.predictions.filter(pred => 
+            pred.behaviorId === 5 || pred.behavior === "other"
+          ).length;
+          const validPredictions = totalPredictions - otherPredictions;
+          
+          console.log(`Behavior predictions: ${totalPredictions} total, ${otherPredictions} "other" (kept but not annotated), ${validPredictions} valid behaviors for annotation`);
+          
+          // Show breakdown of all behavior types in the dataset
+          const behaviorBreakdown = {};
+          apiResult.predictions.forEach(pred => {
+            const key = `${pred.behavior} (ID: ${pred.behaviorId})`;
+            behaviorBreakdown[key] = (behaviorBreakdown[key] || 0) + 1;
+          });
+          console.log('Full behavior breakdown:', behaviorBreakdown);
+          
+          // Store ALL predictions (including "other") for potential future use
+          setPredictedBehaviors(apiResult.predictions);
+          
+          // Auto-generate intervals from predictions (will filter out "other" internally)
+          generateIntervalsFromPredictions(apiResult.predictions);
+          
+          // Show warning if all predictions are "other"
+          if (validPredictions === 0) {
+            console.warn('⚠️ All predictions are "other" behavior - nothing will be displayed on timeline/intervals');
+            setDetectionStatus(`⚠️ All ${totalPredictions} predictions are "other" behavior - no specific behaviors detected for this dataset`);
+          }
+        
+        setDetectionStatus(`✅ Behavior detection completed! Analyzed ${apiResult.total_frames} frames.`);
+        
+        setTimeout(() => {
+          setDetectionStatus("");
+          setIsDetecting(false);
+        }, 3000);
+        
+      } else {
+        console.error('Unexpected API response format:', apiResult);
+        throw new Error(apiResult?.error || `Unexpected response format. Got: ${JSON.stringify(apiResult)}`);
+      }
+
+      
+    } catch (error) {
+      console.error("Behavior detection failed:", error);
+      setDetectionStatus(`❌ Detection failed: ${error.message}`);
+      
+      setTimeout(() => {
+        setDetectionStatus("");
+        setIsDetecting(false);
+      }, 5000);
+    }
+  };
+
+  // Parse output CSV to extract predictions
+  const parseOutputCsvToPredictions = (outputCsv) => {
+    if (!outputCsv || typeof outputCsv !== 'string') return [];
+    
+    const lines = outputCsv.trim().split('\n');
+    const predictions = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const parts = line.split('\t');
+      if (parts.length < 25) continue; // Should have original data + predicted class + confidence
+      
+      // The predicted class ID should be the second-to-last column
+      // The confidence should be the last column
+      const predictedClassId = parseInt(parts[parts.length - 2]);
+      const confidence = parseFloat(parts[parts.length - 1]);
+      
+      if (!isNaN(predictedClassId) && !isNaN(confidence)) {
+        predictions.push({
+          frame: i,
+          behaviorId: predictedClassId,
+          behavior: BEHAVIOR_DETECTION_LABELS[predictedClassId] || 'unknown',
+          confidence: confidence
+        });
+      }
+    }
+    
+    return predictions;
+  };
+
+  // Generate behavior intervals from predictions
+  const generateIntervalsFromPredictions = (predictions) => {
+    if (predictions.length === 0) return;
+    
+    // Filter out "other" behavior (class ID 5) - treat as unlabeled
+    const filteredPredictions = predictions.filter(pred => 
+      pred.behaviorId !== 5 && pred.behavior !== "other"
+    );
+    
+    if (filteredPredictions.length === 0) {
+      console.log("No valid behaviors found after filtering out 'other' class");
+      return;
+    }
+    
+    const newIntervals = [];
+    let currentBehavior = filteredPredictions[0].behavior;
+    let startFrame = filteredPredictions[0].frame;
+    
+    for (let i = 1; i < filteredPredictions.length; i++) {
+      const currentPred = filteredPredictions[i];
+      const prevPred = filteredPredictions[i - 1];
+      
+      // Check if behavior changed or if there's a gap in frames (indicating "other" frames in between)
+      if (currentPred.behavior !== currentBehavior || currentPred.frame !== prevPred.frame + 1) {
+        // End of current behavior segment
+        newIntervals.push({
+          start: startFrame,
+          end: prevPred.frame,
+          startTime: startFrame / frameRate,
+          endTime: prevPred.frame / frameRate,
+          behavior: currentBehavior,
+          auto: true
+        });
+        
+        // Start new behavior segment
+        currentBehavior = currentPred.behavior;
+        startFrame = currentPred.frame;
+      }
+    }
+    
+    // Add final segment
+    const lastPred = filteredPredictions[filteredPredictions.length - 1];
+    newIntervals.push({
+      start: startFrame,
+      end: lastPred.frame,
+      startTime: startFrame / frameRate,
+      endTime: lastPred.frame / frameRate,
+      behavior: currentBehavior,
+      auto: true
+    });
+    
+    // Filter out only "other" behavior - no minimum frame threshold
+    const validIntervals = newIntervals.filter(interval => 
+      interval.behavior !== "other"
+    );
+    
+    console.log(`Generated ${validIntervals.length} intervals (filtered out ${newIntervals.length - validIntervals.length} short/other segments)`);
+    console.log("All intervals before filtering:", newIntervals.map(i => `${i.behavior}: frames ${i.start}-${i.end} (${i.end - i.start + 1} frames)`));
+    console.log("Valid intervals after filtering:", validIntervals.map(i => `${i.behavior}: frames ${i.start}-${i.end} (${i.end - i.start + 1} frames)`));
+    
+    setIntervals(prevIntervals => [...prevIntervals, ...validIntervals]);
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -753,7 +979,28 @@ function App() {
           >
             Save CSV
           </Button>
+          <Button
+            onClick={detectBehaviors}
+            variant="contained"
+            color="secondary"
+            aria-label="Detect Behaviors"
+            disabled={isDetecting || !videoUrl}
+            startIcon={isDetecting ? <CircularProgress size={20} color="inherit" /> : null}
+          >
+            {isDetecting ? "Detecting..." : "🔍 Detect Behaviors"}
+          </Button>
+          
+
         </Box>
+
+        {/* Detection Status */}
+        {detectionStatus && (
+          <Box sx={{ mt: 1, mb: 2 }}>
+            <Alert severity={detectionStatus.includes("✅") ? "success" : detectionStatus.includes("❌") ? "error" : "info"}>
+              {detectionStatus}
+            </Alert>
+          </Box>
+        )}
 
         <Grid container spacing={2}>
           <Grid item xs={6}>
