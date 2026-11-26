@@ -23,7 +23,7 @@ function App() {
 
   const [page, setPage] = useState(0);
   const [frameRate, setFrameRate] = useState(30); // Default FPS set to 30
-  const [frameInterval, setFrameInterval] = useState(100); // Frame transition interval in ms
+  const [frameInterval, setFrameInterval] = useState(50); // Frame transition interval in ms
   const [videoUrl, setVideoUrl] = useState(null);
   const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -56,18 +56,18 @@ function App() {
           primary: "#e0e0e0",   // Brighter text for better readability
           secondary: "#b0b0b0"  // Secondary text color
         },
-        primary: { main: "#e7657cff" },
+        primary: { main: "#9e9e9e" }, // Light grey for dark mode
         divider: "#4a4a4a",     // Dark gray dividers
       } : {
         background: { default: "#ffffff", paper: "#ffffff" },
         text: { primary: "#000000", secondary: "#666666" },
-        primary: { main: "#e7657cff" },
+        primary: { main: "#ffffff" }, // White for light mode
         divider: "#e0e0e0",
       }),
     },
     components: {
-      // Ensure dark theme is applied to borders and other components
-      ...(themeMode === "dark" && {
+      // Theme-specific component styles
+      ...(themeMode === "dark" ? {
         MuiCssBaseline: {
           styleOverrides: {
             body: {
@@ -100,6 +100,27 @@ function App() {
               borderColor: '#5a5a5a',
               '&:hover': {
                 borderColor: '#7a7a7a',
+              },
+            },
+            contained: {
+              backgroundColor: '#9e9e9e',
+              color: '#000000',
+              '&:hover': {
+                backgroundColor: '#bdbdbd',
+              },
+            },
+          },
+        },
+      } : {
+        MuiButton: {
+          styleOverrides: {
+            contained: {
+              backgroundColor: '#ffffff',
+              color: '#000000',
+              border: '1px solid #e0e0e0',
+              '&:hover': {
+                backgroundColor: '#f5f5f5',
+                border: '1px solid #d0d0d0',
               },
             },
           },
@@ -171,6 +192,192 @@ function App() {
       videoRef.current.onloadedmetadata = () => {
         console.log("Video metadata loaded, duration:", videoRef.current.duration);
         setVideoDuration(videoRef.current.duration);
+        
+        // Auto-detect FPS if possible
+        const video = videoRef.current;
+        console.log("Starting FPS detection...");
+        
+        // Method 1: Try to get FPS from video metadata (most reliable for modern browsers)
+        const detectFPSFromMetadata = () => {
+          // Try multiple metadata sources
+          console.log("Checking video metadata sources...");
+          
+          // Method 1a: Check video tracks
+          if (video.videoTracks && video.videoTracks.length > 0) {
+            const track = video.videoTracks[0];
+            console.log("Video track found:", track);
+            if (track.frameRate) {
+              const detectedFPS = Math.round(track.frameRate);
+              console.log("FPS detected from video track:", detectedFPS);
+              if (detectedFPS > 0 && detectedFPS <= 120) {
+                setFrameRate(detectedFPS);
+                return true;
+              }
+            }
+          }
+          
+          // Method 1b: Try to detect from common video frame rates by analyzing duration
+          const commonFPS = [15, 20, 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
+          const duration = video.duration;
+          
+          console.log("Video duration:", duration);
+          
+          let bestMatch = null;
+          let smallestDiff = Infinity;
+          
+          // Calculate what the total frame count would be for each common FPS
+          for (const fps of commonFPS) {
+            const expectedFrames = Math.round(duration * fps);
+            const reconstructedDuration = expectedFrames / fps;
+            const durationDiff = Math.abs(duration - reconstructedDuration);
+            
+            console.log(`FPS ${fps}: expected frames=${expectedFrames}, reconstructed duration=${reconstructedDuration.toFixed(3)}, diff=${durationDiff.toFixed(3)}`);
+            
+            // Track the best match with smallest difference
+            if (durationDiff < smallestDiff) {
+              smallestDiff = durationDiff;
+              bestMatch = fps;
+            }
+          }
+          
+          // Only use duration-based detection if the difference is very small (within 0.01 seconds)
+          if (bestMatch && smallestDiff < 0.01) {
+            console.log(`Best FPS match: ${bestMatch} (duration diff: ${smallestDiff.toFixed(4)})`);
+            console.log("Detected FPS based on duration analysis:", bestMatch);
+            setFrameRate(bestMatch);
+            return true;
+          } else {
+            console.log(`Duration analysis inconclusive. Best match: ${bestMatch} with diff: ${smallestDiff.toFixed(4)}`);
+          }
+          
+          // Try browser-specific properties with better timing
+          if (video.webkitDecodedFrameCount !== undefined) {
+            // Wait longer and check multiple times to get accurate frame count
+            let initialFrameCount = 0;
+            setTimeout(() => {
+              initialFrameCount = video.webkitDecodedFrameCount;
+              console.log("Initial webkit frame count:", initialFrameCount);
+              
+              // Check again after video has played for a bit
+              setTimeout(() => {
+                const finalFrameCount = video.webkitDecodedFrameCount;
+                console.log("Final webkit frame count after 2s:", finalFrameCount);
+                
+                if (finalFrameCount > initialFrameCount && video.duration > 0) {
+                  // Calculate FPS based on actual playback
+                  const framesDifference = finalFrameCount - initialFrameCount;
+                  const timeDifference = 1; // 1 second between measurements
+                  const detectedFPS = Math.round(framesDifference / timeDifference);
+                  
+                  console.log("Frames difference:", framesDifference);
+                  console.log("FPS calculated from webkit frames:", detectedFPS);
+                  
+                  if (detectedFPS > 0 && detectedFPS <= 120) {
+                    setFrameRate(detectedFPS);
+                    console.log("Auto-detected FPS (webkit):", detectedFPS);
+                    return;
+                  }
+                }
+                
+                // Fallback: Try to estimate from total frames and duration
+                if (finalFrameCount > 0 && video.duration > 0) {
+                  const estimatedFPS = Math.round(finalFrameCount / video.currentTime);
+                  console.log("Estimated FPS from total frames:", estimatedFPS);
+                  
+                  if (estimatedFPS > 0 && estimatedFPS <= 120) {
+                    setFrameRate(estimatedFPS);
+                    console.log("Auto-detected FPS (webkit estimated):", estimatedFPS);
+                  }
+                }
+              }, 1000);
+            }, 1000);
+            return true;
+          }
+          
+          if (video.mozDecodedFrames !== undefined) {
+            setTimeout(() => {
+              const frameCount = video.mozDecodedFrames;
+              console.log("Mozilla frame count after 1s:", frameCount);
+              if (frameCount > 0 && video.duration > 0) {
+                const detectedFPS = Math.round(frameCount / video.duration);
+                console.log("FPS calculated from mozilla frames:", detectedFPS);
+                if (detectedFPS > 0 && detectedFPS <= 120) {
+                  setFrameRate(detectedFPS);
+                  console.log("Auto-detected FPS (mozilla):", detectedFPS);
+                }
+              }
+            }, 1000);
+            return true;
+          }
+          
+          return false;
+        };
+        
+        // Method 2: Estimate FPS by measuring actual playback frame rate
+        const estimateFPSByTiming = () => {
+          console.log("Using timing-based FPS estimation...");
+          const originalTime = video.currentTime;
+          
+          // Method 2a: Use requestAnimationFrame to measure frame timing during playback
+          let frameTimestamps = [];
+          let startTime = performance.now();
+          let sampleCount = 0;
+          const maxSamples = 60; // Sample for 60 frames
+          
+          const measureFrameRate = () => {
+            const now = performance.now();
+            frameTimestamps.push(now);
+            sampleCount++;
+            
+            if (sampleCount >= maxSamples || (now - startTime) > 3000) { // Max 3 seconds
+              // Calculate FPS from frame timestamps
+              if (frameTimestamps.length > 10) {
+                const totalTime = (frameTimestamps[frameTimestamps.length - 1] - frameTimestamps[0]) / 1000;
+                const measuredFPS = Math.round((frameTimestamps.length - 1) / totalTime);
+                
+                console.log("Frame timestamps collected:", frameTimestamps.length);
+                console.log("Total time:", totalTime);
+                console.log("Measured FPS from animation frames:", measuredFPS);
+                
+                // Since this measures display refresh rate, try to match common video rates
+                const commonVideoFPS = [15, 20, 24, 25, 30];
+                let bestMatch = 30; // default
+                let smallestDiff = Math.abs(30 - measuredFPS);
+                
+                for (const fps of commonVideoFPS) {
+                  const diff = Math.abs(fps - measuredFPS);
+                  if (diff < smallestDiff) {
+                    smallestDiff = diff;
+                    bestMatch = fps;
+                  }
+                }
+                
+                console.log("Best FPS match:", bestMatch);
+                if (bestMatch > 0 && bestMatch <= 120) {
+                  setFrameRate(bestMatch);
+                  console.log("Auto-detected FPS (timing):", bestMatch);
+                }
+              }
+              
+              // Restore original time and pause if it was paused
+              video.currentTime = originalTime;
+              return;
+            }
+            
+            requestAnimationFrame(measureFrameRate);
+          };
+          
+          // Start measuring during video playback
+          requestAnimationFrame(measureFrameRate);
+        };
+        
+        // Try different detection methods
+        setTimeout(() => {
+          if (!detectFPSFromMetadata()) {
+            console.log("Metadata detection failed, trying timing estimation...");
+            estimateFPSByTiming();
+          }
+        }, 500);
       };
       videoRef.current.onerror = (e) => {
         console.error("Video error:", e);
@@ -182,6 +389,7 @@ function App() {
         console.log("Cleaning up videoRef");
         videoRef.current.onloadedmetadata = null;
         videoRef.current.onerror = null;
+        videoRef.current.onseeked = null;
       }
     };
   }, [videoUrl]);
@@ -257,19 +465,18 @@ function App() {
   }, [currentFrame]);
 
   useEffect(() => {
-    if (arrowPressed) {
+          if (arrowPressed) {
       const moveFrame = () => {
         if (!videoRef.current) return;
         const direction = arrowPressed === "ArrowRight" ? 1 : -1;
-        const newFrame = currentFrameRef.current + direction;
+        const maxFrame = Math.round(videoDuration * frameRate) - 1;
+        const newFrame = Math.max(0, Math.min(currentFrameRef.current + direction, maxFrame));
         const newTime = newFrame / frameRate;
-        if (newTime >= 0 && newTime <= videoDuration) {
-          setCurrentTime(newTime);
-          setCurrentFrame(newFrame);
-          currentFrameRef.current = newFrame;
-          videoRef.current.currentTime = newTime;
-          console.log(`Moved to frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
-        }
+        setCurrentTime(newTime);
+        setCurrentFrame(newFrame);
+        currentFrameRef.current = newFrame;
+        videoRef.current.currentTime = newTime;
+        console.log(`Moved to frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
         frameIntervalRef.current = setTimeout(moveFrame, frameInterval);
       };
       frameIntervalRef.current = setTimeout(moveFrame, frameInterval);
@@ -312,7 +519,8 @@ function App() {
     if (!videoRef.current) return;
     const time = videoRef.current.currentTime;
     setCurrentTime(time);
-    const newFrame = Math.round(time * frameRate);
+    const maxFrame = Math.round(videoDuration * frameRate) - 1;
+    const newFrame = Math.max(0, Math.min(Math.round(time * frameRate), maxFrame));
     setCurrentFrame(newFrame);
     currentFrameRef.current = newFrame;
   }
@@ -329,30 +537,27 @@ function App() {
   }
 
   function moveNextFrame() {
-    const newFrame = currentFrame + 1;
+    const maxFrame = Math.round(videoDuration * frameRate) - 1; // 0-based indexing
+    const newFrame = Math.min(currentFrame + 1, maxFrame);
     const newTime = newFrame / frameRate;
-    if (newTime <= videoDuration) {
-      setCurrentTime(newTime);
-      setCurrentFrame(newFrame);
-      currentFrameRef.current = newFrame;
-      if (videoRef.current) {
-        videoRef.current.currentTime = newTime;
-        console.log(`Next frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
-      }
+    setCurrentTime(newTime);
+    setCurrentFrame(newFrame);
+    currentFrameRef.current = newFrame;
+    if (videoRef.current) {
+      videoRef.current.currentTime = newTime;
+      console.log(`Next frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
     }
   }
 
   function movePrevFrame() {
-    const newFrame = currentFrame - 1;
+    const newFrame = Math.max(currentFrame - 1, 0);
     const newTime = newFrame / frameRate;
-    if (newTime >= 0) {
-      setCurrentTime(newTime);
-      setCurrentFrame(newFrame);
-      currentFrameRef.current = newFrame;
-      if (videoRef.current) {
-        videoRef.current.currentTime = newTime;
-        console.log(`Previous frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
-      }
+    setCurrentTime(newTime);
+    setCurrentFrame(newFrame);
+    currentFrameRef.current = newFrame;
+    if (videoRef.current) {
+      videoRef.current.currentTime = newTime;
+      console.log(`Previous frame: ${newFrame}, time: ${newTime.toFixed(2)}s`);
     }
   }
 
@@ -419,8 +624,8 @@ function App() {
       setIsAddingInterval(false);
       return;
     }
-    if (startFrame < 0 || endFrame > maxFrame) {
-      alert(`Frames must be between 0 and ${maxFrame}.`);
+    if (startFrame < 0 || endFrame >= maxFrame) {
+      alert(`Frames must be between 1 and ${maxFrame}.`);
       setIsAddingInterval(false);
       return;
     }
@@ -490,7 +695,7 @@ function App() {
         p: 2
       }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h4" gutterBottom>Behavior Labeling Tool</Typography>
+          <Typography variant="h4" gutterBottom fontWeight="bold">Behavior Labeling Tool</Typography>
           <IconButton onClick={toggleTheme} color="inherit" aria-label="Toggle theme">
             {themeMode === "light" ? <Brightness4Icon /> : <Brightness7Icon />}
           </IconButton>
@@ -641,9 +846,14 @@ function App() {
                   >
                     Mark End (E)
                   </Button>
+                  <Box>
                   <Typography>
-                    Current Frame: {currentFrame} / {Math.round(videoDuration * frameRate)}
+                    Current Frame: {currentFrame + 1} / {Math.round(videoDuration * frameRate)}
                   </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Time: {currentTime.toFixed(5)}s
+                    </Typography>
+                  </Box>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2, mt: 1, alignItems: 'center' }}>
                   <Button
@@ -677,7 +887,7 @@ function App() {
                 <Slider
                   value={currentFrame}
                   min={0}
-                  max={Math.round(videoDuration * frameRate)}
+                  max={Math.round(videoDuration * frameRate) - 1}
                   step={1}
                   onChange={handleSliderChange}
                   aria-label="Video frame timeline"
@@ -703,29 +913,31 @@ function App() {
                 <TextField
                   label="Start Frame"
                   type="number"
-                  value={intervalStartFrame}
+                  value={intervalStartFrame === "" ? "" : intervalStartFrame + 1}
                   onChange={(e) => {
                     const v = e.target.value;
                     console.log("Start Frame input:", v);
-                    setIntervalStartFrame(v);
-                    if (v !== "") setMarkStart(Number(v));
+                    const zeroBasedFrame = v === "" ? "" : Number(v) - 1;
+                    setIntervalStartFrame(zeroBasedFrame);
+                    if (v !== "") setMarkStart(zeroBasedFrame);
                     else setMarkStart(null);
                   }}
                   size="small"
-                  inputProps={{ min: 0, step: 1 }}
+                  inputProps={{ min: 1, step: 1 }}
                   aria-label="Interval start frame"
                 />
                 <TextField
                   label="End Frame"
                   type="number"
-                  value={intervalStartFrame !== "" ? intervalEndFrame : ""}
+                  value={intervalStartFrame !== "" ? (intervalEndFrame === "" ? "" : intervalEndFrame + 1) : ""}
                   onChange={(e) => {
                     const v = e.target.value;
                     console.log("End Frame input:", v);
-                    setIntervalEndFrame(v);
+                    const zeroBasedFrame = v === "" ? "" : Number(v) - 1;
+                    setIntervalEndFrame(zeroBasedFrame);
                   }}
                   size="small"
-                  inputProps={{ min: intervalStartFrame !== "" ? Number(intervalStartFrame) : 0, step: 1 }}
+                  inputProps={{ min: intervalStartFrame !== "" ? Number(intervalStartFrame) + 1 : 1, step: 1 }}
                   aria-label="Interval end frame"
                   disabled={intervalStartFrame === ""}
                 />
@@ -772,7 +984,7 @@ function App() {
                       .slice(page * rowsPerPage, (page + 1) * rowsPerPage)
                       .map((interval, i) => (
                         <TableRow key={i}>
-                          <TableCell>{`${interval.start} - ${interval.end}`}</TableCell>
+                          <TableCell>{`${interval.start + 1} - ${interval.end + 1}`}</TableCell>
                           <TableCell>
                             <FormControl size="small" sx={{ minWidth: 200 }}>
                               <InputLabel>Behavior</InputLabel>
